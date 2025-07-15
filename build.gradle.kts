@@ -27,6 +27,10 @@ dependencies {
 
 	implementation("org.postgresql:postgresql")
 	testImplementation("com.h2database:h2")
+
+	implementation(project(":database"))
+	implementation(project(":scim"))
+
 }
 
 subprojects {

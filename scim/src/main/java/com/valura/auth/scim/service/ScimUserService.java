@@ -35,7 +35,6 @@ public class ScimUserService {
     @Transactional
     public UserResource create(UserResource user) throws BadRequestException {
         if (userRepository.existsByUserName(user.getUserName())) {
-            // Use the uniqueness factory method for duplicate username scenarios
             throw BadRequestException.uniqueness("Username already exists");
         }
 
@@ -117,7 +116,6 @@ public class ScimUserService {
         Meta meta = new Meta();
         meta.setResourceType("User");
 
-        // Set created and last modified dates
         if (entity.getCreatedAt() != null) {
             Calendar created = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
             created.setTimeInMillis(entity.getCreatedAt().toEpochMilli());
