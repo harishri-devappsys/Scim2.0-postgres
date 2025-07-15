@@ -9,9 +9,6 @@ import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ScimGroup extends GroupResource {
-    // No need to redefine fields as they're already in GroupResource
-
-    // Only keep custom patch operation if needed, otherwise use PatchRequest from SDK
     public static class PatchOp {
         private String op;
         private String path;

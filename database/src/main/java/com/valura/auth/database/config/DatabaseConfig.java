@@ -10,5 +10,5 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @EntityScan(basePackages = "com.valura.auth.database.entity")
 @EnableJpaRepositories(basePackages = "com.valura.auth.database.repository")
 public class DatabaseConfig {
-    // Configuration can be extended based on needs
+    // Configuration can be extended and add the code here
 }

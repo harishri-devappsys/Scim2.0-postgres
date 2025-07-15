@@ -32,7 +32,6 @@ public class ScimUser extends UserResource {
             public void setActive(Boolean active) { this.active = active; }
         }
 
-        // Getters and setters
         public String getOp() { return op; }
         public void setOp(String op) { this.op = op; }
         public String getPath() { return path; }

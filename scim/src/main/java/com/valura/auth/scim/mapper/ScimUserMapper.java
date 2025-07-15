@@ -87,7 +87,6 @@ public class ScimUserMapper {
         }
 
         scimUser.setMeta(meta);
-
         return scimUser;
     }
 
