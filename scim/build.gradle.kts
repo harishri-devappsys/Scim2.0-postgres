@@ -3,6 +3,9 @@ dependencies {
     implementation(project(":database"))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    implementation("com.auth0:java-jwt:4.4.0")
 
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 
@@ -22,8 +25,7 @@ dependencies {
 
 
 
-    testImplementation("org.springframework.boot:spring-boot-starter-test") // <--- This line is missing platform()
-
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.testng:testng:7.8.0")
 

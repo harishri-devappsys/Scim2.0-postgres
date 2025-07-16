@@ -4,6 +4,7 @@ import com.unboundid.scim2.common.types.GroupResource;
 import com.unboundid.scim2.common.types.UserResource;
 import com.unboundid.scim2.common.utils.SchemaUtils;
 import com.unboundid.scim2.server.utils.ResourceTypeDefinition;
+import com.unboundid.scim2.common.types.ETagConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -32,5 +33,10 @@ public class ScimConfig {
                 .setDescription("Group")
                 .setCoreSchema(SchemaUtils.getSchema(GroupResource.class))
                 .build();
+    }
+
+    @Bean
+    public ETagConfig etagConfig() {
+        return new ETagConfig(true);
     }
 }

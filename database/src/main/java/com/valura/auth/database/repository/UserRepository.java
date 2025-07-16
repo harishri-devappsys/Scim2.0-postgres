@@ -39,4 +39,10 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
     long countGroupsByUserExternalId(@Param("userExternalId") String userExternalId);
 
     void deleteByExternalId(String externalId);
+
+    Page<UserEntity> findByUserNameContainingIgnoreCase(String userName, Pageable pageable);
+
+    Page<UserEntity> findByDisplayNameContainingIgnoreCase(String displayName, Pageable pageable);
+
+    Page<UserEntity> findByEmailContainingIgnoreCase(String email, Pageable pageable);
 }

@@ -2,6 +2,8 @@ package com.valura.auth.scim.service;
 
 import com.unboundid.scim2.common.exceptions.ResourceNotFoundException;
 import com.unboundid.scim2.common.exceptions.BadRequestException;
+import com.unboundid.scim2.common.exceptions.PreconditionFailedException;
+import com.unboundid.scim2.common.exceptions.ScimException;
 import com.unboundid.scim2.common.types.Email;
 import com.unboundid.scim2.common.types.Meta;
 import com.unboundid.scim2.common.types.UserResource;
@@ -16,12 +18,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
+import java.util.Optional;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.xml.bind.DatatypeConverter;
 
 @Service
 @ResourceType(description = "User Account", name = "User", schema = UserResource.class)
@@ -52,10 +61,42 @@ public class ScimUserService {
     }
 
     @Transactional
-    public UserResource replace(String id, UserResource user) throws ResourceNotFoundException {
+    public UserResource replace(String id, UserResource user, String ifMatch) throws ScimException {
         UserEntity entity = userRepository.findByExternalId(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        UserResource existingUser = mapToScimUser(entity);
+        validateETag(existingUser.getMeta().getVersion(), ifMatch);
+
         updateEntityFromScim(entity, user);
+        entity = userRepository.save(entity);
+        return mapToScimUser(entity);
+    }
+
+    @Transactional
+    public UserResource patch(String id, UserResource user, String ifMatch) throws ScimException {
+        UserEntity entity = userRepository.findByExternalId(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        UserResource existingUser = mapToScimUser(entity);
+        validateETag(existingUser.getMeta().getVersion(), ifMatch);
+
+        // Apply partial updates from 'user' to 'entity'
+        // This is a simplified example; a real SCIM PATCH would be more complex
+        // and involve operations like add, remove, replace.
+        if (user.getUserName() != null) {
+            entity.setUserName(user.getUserName());
+        }
+        if (user.getDisplayName() != null) {
+            entity.setDisplayName(user.getDisplayName());
+        }
+        if (user.getActive() != null) {
+            entity.setActive(user.getActive());
+        }
+        if (user.getEmails() != null && !user.getEmails().isEmpty()) {
+            entity.setEmail(user.getEmails().get(0).getValue());
+        }
+
         entity = userRepository.save(entity);
         return mapToScimUser(entity);
     }
@@ -68,22 +109,109 @@ public class ScimUserService {
     }
 
     public ScimListResponse<UserResource> search(Integer startIndex, Integer count, String filter) {
-        Pageable pageable = PageRequest.of(
-                startIndex != null ? startIndex - 1 : 0,
-                count != null ? count : 100
-        );
+        try {
+            // Set defaults
+            int pageNumber = (startIndex != null && startIndex > 0) ? startIndex - 1 : 0;
+            int pageSize = (count != null && count > 0) ? count : 100;
 
-        Page<UserEntity> page = userRepository.findAll(pageable);
-        List<UserResource> resources = page.getContent().stream()
-                .map(this::mapToScimUser)
-                .collect(Collectors.toList());
+            Pageable pageable = PageRequest.of(pageNumber, pageSize);
+            Page<UserEntity> page;
 
-        return ScimListResponse.<UserResource>builder()
-                .resources(resources)
-                .totalResults((int) page.getTotalElements())
-                .startIndex(startIndex != null ? startIndex : 1)
-                .itemsPerPage(count != null ? count : 100)
-                .build();
+            // Handle filter parameter
+            if (filter != null && !filter.trim().isEmpty()) {
+                System.out.println("Processing filter: " + filter);
+
+                // Parse the filter - this is a simplified parser for common SCIM filters
+                FilterResult filterResult = parseFilter(filter);
+
+                if (filterResult != null) {
+                    switch (filterResult.getAttribute().toLowerCase()) {
+                        case "username":
+                            page = userRepository.findByUserNameContainingIgnoreCase(
+                                    filterResult.getValue(), pageable);
+                            break;
+                        case "displayname":
+                            page = userRepository.findByDisplayNameContainingIgnoreCase(
+                                    filterResult.getValue(), pageable);
+                            break;
+                        case "emails":
+                        case "emails.value":
+                            page = userRepository.findByEmailContainingIgnoreCase(
+                                    filterResult.getValue(), pageable);
+                            break;
+                        case "active":
+                            boolean activeValue = Boolean.parseBoolean(filterResult.getValue());
+                            page = userRepository.findByActive(activeValue, pageable);
+                            break;
+                        default:
+                            System.out.println("Unsupported filter attribute: " + filterResult.getAttribute() + ", returning all users");
+                            page = userRepository.findAll(pageable);
+                    }
+                } else {
+                    // If we can't parse the filter, return all users
+                    System.out.println("Could not parse filter, returning all users");
+                    page = userRepository.findAll(pageable);
+                }
+            } else {
+                // No filter, return all users
+                page = userRepository.findAll(pageable);
+            }
+
+            List<UserResource> resources = page.getContent().stream()
+                    .map(this::mapToScimUser)
+                    .collect(Collectors.toList());
+
+            return ScimListResponse.<UserResource>builder()
+                    .resources(resources)
+                    .totalResults((int) page.getTotalElements())
+                    .startIndex(startIndex != null ? startIndex : 1)
+                    .itemsPerPage(pageSize)
+                    .build();
+
+        } catch (Exception e) {
+            System.err.println("Error in search method: " + e.getMessage());
+            e.printStackTrace();
+
+            // Return empty result instead of throwing exception
+            return ScimListResponse.<UserResource>builder()
+                    .resources(new ArrayList<>())
+                    .totalResults(0)
+                    .startIndex(startIndex != null ? startIndex : 1)
+                    .itemsPerPage(count != null ? count : 100)
+                    .build();
+        }
+    }
+
+    /**
+     * Simple SCIM filter parser for common patterns like:
+     * - userName eq "john.doe"
+     * - displayName co "John"
+     * - emails.value sw "john"
+     * - active eq true
+     */
+    private FilterResult parseFilter(String filter) {
+        try {
+            // Remove extra spaces and quotes
+            filter = filter.trim();
+
+            // Pattern for: attribute operator "value" or attribute operator value
+            Pattern pattern = Pattern.compile("(\\w+(?:\\.\\w+)?)\\s+(eq|ne|co|sw|ew|gt|lt|ge|le)\\s+[\"']?([^\"']+)[\"']?", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(filter);
+
+            if (matcher.find()) {
+                String attribute = matcher.group(1);
+                String operator = matcher.group(2);
+                String value = matcher.group(3);
+
+                System.out.println("Parsed filter - Attribute: " + attribute + ", Operator: " + operator + ", Value: " + value);
+
+                return new FilterResult(attribute, operator, value);
+            }
+        } catch (Exception e) {
+            System.err.println("Error parsing filter: " + e.getMessage());
+        }
+
+        return null;
     }
 
     private void updateEntityFromScim(UserEntity entity, UserResource user) {
@@ -130,6 +258,7 @@ public class ScimUserService {
 
         try {
             meta.setLocation(URI.create("/scim/v2/Users/" + entity.getExternalId()));
+            meta.setVersion(generateETag(scimUser)); // Generate ETag here
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Invalid URI format", e);
         }
@@ -137,5 +266,52 @@ public class ScimUserService {
         scimUser.setMeta(meta);
 
         return scimUser;
+    }
+
+    private String generateETag(UserResource userResource) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-1");
+            // Use a combination of fields to generate a hash
+            String data = userResource.getId() + userResource.getUserName() + userResource.getDisplayName() +
+                    userResource.getActive() +
+                    (userResource.getMeta() != null && userResource.getMeta().getLastModified() != null ?
+                            userResource.getMeta().getLastModified().getTimeInMillis() : "");
+            byte[] hash = md.digest(data.getBytes(StandardCharsets.UTF_8));
+            return "W/\"" + DatatypeConverter.printHexBinary(hash).toLowerCase() + "\"";
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-1 algorithm not found for ETag generation", e);
+        }
+    }
+
+    private void validateETag(String currentETag, String ifMatchHeader) throws PreconditionFailedException {
+        if (ifMatchHeader != null && !ifMatchHeader.isEmpty()) {
+            if (!currentETag.equals(ifMatchHeader)) {
+                throw new PreconditionFailedException("ETag mismatch");
+            }
+        }
+    }
+
+    private static class FilterResult {
+        private final String attribute;
+        private final String operator;
+        private final String value;
+
+        public FilterResult(String attribute, String operator, String value) {
+            this.attribute = attribute;
+            this.operator = operator;
+            this.value = value;
+        }
+
+        public String getAttribute() {
+            return attribute;
+        }
+
+        public String getOperator() {
+            return operator;
+        }
+
+        public String getValue() {
+            return value;
+        }
     }
 }

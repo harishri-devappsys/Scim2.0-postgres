@@ -14,7 +14,16 @@ public class ScimError {
         this.scimType = scimType;
     }
 
-    // Getters and Setters
+    public ScimError(String detail, String scimType, String status) {
+        this.detail = detail;
+        this.scimType = scimType;
+        this.status = status;
+    }
+
+    public ScimError(String detail) {
+        this.detail = detail;
+    }
+
     public String[] getSchemas() {
         return schemas;
     }
