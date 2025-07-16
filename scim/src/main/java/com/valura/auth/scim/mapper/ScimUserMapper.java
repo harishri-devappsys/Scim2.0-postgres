@@ -24,6 +24,11 @@ public class ScimUserMapper {
             entity.setEmail(scimUser.getEmails().get(0).getValue());
         }
 
+        if (scimUser.getName() != null) {
+            entity.setFirstName(scimUser.getName().getGivenName());
+            entity.setLastName(scimUser.getName().getFamilyName());
+        }
+
         return entity;
     }
 
@@ -34,7 +39,20 @@ public class ScimUserMapper {
         scimUser.setDisplayName(entity.getDisplayName());
         scimUser.setActive(entity.isActive());
 
-        // Set email
+        if (entity.getFirstName() != null || entity.getLastName() != null) {
+            Name name = new Name();
+            name.setGivenName(entity.getFirstName());
+            name.setFamilyName(entity.getLastName());
+            if (entity.getFirstName() != null && entity.getLastName() != null) {
+                name.setFormatted(entity.getFirstName() + " " + entity.getLastName());
+            } else if (entity.getFirstName() != null) {
+                name.setFormatted(entity.getFirstName());
+            } else if (entity.getLastName() != null) {
+                name.setFormatted(entity.getLastName());
+            }
+            scimUser.setName(name);
+        }
+
         if (entity.getEmail() != null) {
             Email email = new Email();
             email.setValue(entity.getEmail());
@@ -45,7 +63,6 @@ public class ScimUserMapper {
             scimUser.setEmails(emails);
         }
 
-        // Set groups
         if (entity.getGroups() != null && !entity.getGroups().isEmpty()) {
             List<Group> groups = entity.getGroups().stream()
                     .map(groupEntity -> {
@@ -63,11 +80,9 @@ public class ScimUserMapper {
             scimUser.setGroups(groups);
         }
 
-        // Set meta information
         Meta meta = new Meta();
         meta.setResourceType("User");
 
-        // Convert Instant to Calendar
         if (entity.getCreatedAt() != null) {
             Calendar created = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
             created.setTimeInMillis(entity.getCreatedAt().toEpochMilli());

@@ -20,7 +20,9 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
     @Query("SELECT u FROM UserEntity u WHERE " +
             "LOWER(u.userName) LIKE LOWER(CONCAT('%', :term, '%')) OR " +
             "LOWER(u.displayName) LIKE LOWER(CONCAT('%', :term, '%')) OR " +
-            "LOWER(u.email) LIKE LOWER(CONCAT('%', :term, '%'))")
+            "LOWER(u.email) LIKE LOWER(CONCAT('%', :term, '%')) OR " +
+            "LOWER(u.firstName) LIKE LOWER(CONCAT('%', :term, '%')) OR " + // Added for general search
+            "LOWER(u.lastName) LIKE LOWER(CONCAT('%', :term, '%'))")      // Added for general search
     Page<UserEntity> searchUsers(@Param("term") String term, Pageable pageable);
 
     boolean existsByUserName(String userName);
@@ -45,4 +47,9 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
     Page<UserEntity> findByDisplayNameContainingIgnoreCase(String displayName, Pageable pageable);
 
     Page<UserEntity> findByEmailContainingIgnoreCase(String email, Pageable pageable);
+
+
+    Page<UserEntity> findByFirstNameContainingIgnoreCase(String firstName, Pageable pageable);
+
+    Page<UserEntity> findByLastNameContainingIgnoreCase(String lastName, Pageable pageable);
 }

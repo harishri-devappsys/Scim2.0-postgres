@@ -27,6 +27,12 @@ public class UserEntity {
     @Column(name = "display_name")
     private String displayName;
 
+    @Column(name = "first_name")
+    private String firstName;
+
+    @Column(name = "last_name")
+    private String lastName;
+
     @Column(nullable = false)
     private String email;
 
@@ -58,7 +64,6 @@ public class UserEntity {
         updatedAt = Instant.now();
     }
 
-    // Getters
     public Long getId() {
         return id;
     }
@@ -73,6 +78,14 @@ public class UserEntity {
 
     public String getDisplayName() {
         return displayName;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
     }
 
     public String getEmail() {
@@ -95,7 +108,6 @@ public class UserEntity {
         return updatedAt;
     }
 
-    // Setters
     public void setId(Long id) {
         this.id = id;
     }
@@ -112,6 +124,14 @@ public class UserEntity {
         this.displayName = displayName;
     }
 
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
+    }
+
     public void setEmail(String email) {
         this.email = email;
     }
@@ -124,7 +144,6 @@ public class UserEntity {
         this.groups = groups != null ? groups : new HashSet<>();
     }
 
-    // Helper methods for managing bidirectional relationship
     public void addGroup(GroupEntity group) {
         groups.add(group);
         group.getMembers().add(this);

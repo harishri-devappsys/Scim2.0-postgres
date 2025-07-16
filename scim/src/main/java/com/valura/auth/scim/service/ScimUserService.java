@@ -6,6 +6,7 @@ import com.unboundid.scim2.common.exceptions.PreconditionFailedException;
 import com.unboundid.scim2.common.exceptions.ScimException;
 import com.unboundid.scim2.common.types.Email;
 import com.unboundid.scim2.common.types.Meta;
+import com.unboundid.scim2.common.types.Name; // Ensure this is imported
 import com.unboundid.scim2.common.types.UserResource;
 import com.unboundid.scim2.server.annotations.ResourceType;
 import com.valura.auth.database.entity.UserEntity;
@@ -48,8 +49,8 @@ public class ScimUserService {
         }
 
         UserEntity entity = new UserEntity();
-        entity.setExternalId(UUID.randomUUID().toString());
-        updateEntityFromScim(entity, user);
+        entity.setExternalId(UUID.randomUUID().toString()); // ExternalId set here for new users
+        updateEntityFromScim(entity, user); // This will now map name fields
         entity = userRepository.save(entity);
         return mapToScimUser(entity);
     }
@@ -68,7 +69,9 @@ public class ScimUserService {
         UserResource existingUser = mapToScimUser(entity);
         validateETag(existingUser.getMeta().getVersion(), ifMatch);
 
-        updateEntityFromScim(entity, user);
+        // Do NOT set ExternalId here, as it's an existing user.
+        // If the SCIM client sends an 'id' in the PUT body, it implicitly means the existing resource.
+        updateEntityFromScim(entity, user); // This will now map name fields
         entity = userRepository.save(entity);
         return mapToScimUser(entity);
     }
@@ -84,6 +87,7 @@ public class ScimUserService {
         // Apply partial updates from 'user' to 'entity'
         // This is a simplified example; a real SCIM PATCH would be more complex
         // and involve operations like add, remove, replace.
+        // It should also call a more sophisticated update method or apply operations directly.
         if (user.getUserName() != null) {
             entity.setUserName(user.getUserName());
         }
@@ -95,6 +99,15 @@ public class ScimUserService {
         }
         if (user.getEmails() != null && !user.getEmails().isEmpty()) {
             entity.setEmail(user.getEmails().get(0).getValue());
+        }
+        // For PATCH, you'd typically need to check for name presence as well
+        if (user.getName() != null) {
+            if (user.getName().getGivenName() != null) {
+                entity.setFirstName(user.getName().getGivenName());
+            }
+            if (user.getName().getFamilyName() != null) {
+                entity.setLastName(user.getName().getFamilyName());
+            }
         }
 
         entity = userRepository.save(entity);
@@ -110,18 +123,15 @@ public class ScimUserService {
 
     public ScimListResponse<UserResource> search(Integer startIndex, Integer count, String filter) {
         try {
-            // Set defaults
             int pageNumber = (startIndex != null && startIndex > 0) ? startIndex - 1 : 0;
             int pageSize = (count != null && count > 0) ? count : 100;
 
             Pageable pageable = PageRequest.of(pageNumber, pageSize);
             Page<UserEntity> page;
 
-            // Handle filter parameter
             if (filter != null && !filter.trim().isEmpty()) {
                 System.out.println("Processing filter: " + filter);
 
-                // Parse the filter - this is a simplified parser for common SCIM filters
                 FilterResult filterResult = parseFilter(filter);
 
                 if (filterResult != null) {
@@ -143,17 +153,23 @@ public class ScimUserService {
                             boolean activeValue = Boolean.parseBoolean(filterResult.getValue());
                             page = userRepository.findByActive(activeValue, pageable);
                             break;
+                        case "name.givenname": // Added filter for givenName
+                            page = userRepository.findByFirstNameContainingIgnoreCase(
+                                    filterResult.getValue(), pageable);
+                            break;
+                        case "name.familyname": // Added filter for familyName
+                            page = userRepository.findByLastNameContainingIgnoreCase(
+                                    filterResult.getValue(), pageable);
+                            break;
                         default:
                             System.out.println("Unsupported filter attribute: " + filterResult.getAttribute() + ", returning all users");
                             page = userRepository.findAll(pageable);
                     }
                 } else {
-                    // If we can't parse the filter, return all users
                     System.out.println("Could not parse filter, returning all users");
                     page = userRepository.findAll(pageable);
                 }
             } else {
-                // No filter, return all users
                 page = userRepository.findAll(pageable);
             }
 
@@ -165,14 +181,13 @@ public class ScimUserService {
                     .resources(resources)
                     .totalResults((int) page.getTotalElements())
                     .startIndex(startIndex != null ? startIndex : 1)
-                    .itemsPerPage(pageSize)
+                    .itemsPerPage(resources.size()) // Use resources.size() for actual items per page
                     .build();
 
         } catch (Exception e) {
             System.err.println("Error in search method: " + e.getMessage());
             e.printStackTrace();
 
-            // Return empty result instead of throwing exception
             return ScimListResponse.<UserResource>builder()
                     .resources(new ArrayList<>())
                     .totalResults(0)
@@ -182,19 +197,9 @@ public class ScimUserService {
         }
     }
 
-    /**
-     * Simple SCIM filter parser for common patterns like:
-     * - userName eq "john.doe"
-     * - displayName co "John"
-     * - emails.value sw "john"
-     * - active eq true
-     */
     private FilterResult parseFilter(String filter) {
         try {
-            // Remove extra spaces and quotes
             filter = filter.trim();
-
-            // Pattern for: attribute operator "value" or attribute operator value
             Pattern pattern = Pattern.compile("(\\w+(?:\\.\\w+)?)\\s+(eq|ne|co|sw|ew|gt|lt|ge|le)\\s+[\"']?([^\"']+)[\"']?", Pattern.CASE_INSENSITIVE);
             Matcher matcher = pattern.matcher(filter);
 
@@ -222,6 +227,18 @@ public class ScimUserService {
         if (user.getEmails() != null && !user.getEmails().isEmpty()) {
             entity.setEmail(user.getEmails().get(0).getValue());
         }
+
+        // --- NEW/UPDATED MAPPING FOR NAME ---
+        if (user.getName() != null) {
+            // Only update if provided in the SCIM UserResource
+            if (user.getName().getGivenName() != null) {
+                entity.setFirstName(user.getName().getGivenName());
+            }
+            if (user.getName().getFamilyName() != null) {
+                entity.setLastName(user.getName().getFamilyName());
+            }
+        }
+        // --- END NEW/UPDATED MAPPING ---
     }
 
     private UserResource mapToScimUser(UserEntity entity) {
@@ -230,6 +247,22 @@ public class ScimUserService {
         scimUser.setUserName(entity.getUserName());
         scimUser.setDisplayName(entity.getDisplayName());
         scimUser.setActive(entity.isActive());
+
+        // --- NEW/UPDATED MAPPING FOR NAME ---
+        if (entity.getFirstName() != null || entity.getLastName() != null) {
+            Name name = new Name(); // Use UnboundID's Name class
+            name.setGivenName(entity.getFirstName());
+            name.setFamilyName(entity.getLastName());
+            if (entity.getFirstName() != null && entity.getLastName() != null) {
+                name.setFormatted(entity.getFirstName() + " " + entity.getLastName());
+            } else if (entity.getFirstName() != null) {
+                name.setFormatted(entity.getFirstName());
+            } else if (entity.getLastName() != null) {
+                name.setFormatted(entity.getLastName());
+            }
+            scimUser.setName(name); // Set the populated Name object
+        }
+        // --- END NEW/UPDATED MAPPING ---
 
         if (entity.getEmail() != null) {
             Email email = new Email();
@@ -258,7 +291,7 @@ public class ScimUserService {
 
         try {
             meta.setLocation(URI.create("/scim/v2/Users/" + entity.getExternalId()));
-            meta.setVersion(generateETag(scimUser)); // Generate ETag here
+            meta.setVersion(generateETag(scimUser));
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Invalid URI format", e);
         }
@@ -271,7 +304,6 @@ public class ScimUserService {
     private String generateETag(UserResource userResource) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-1");
-            // Use a combination of fields to generate a hash
             String data = userResource.getId() + userResource.getUserName() + userResource.getDisplayName() +
                     userResource.getActive() +
                     (userResource.getMeta() != null && userResource.getMeta().getLastModified() != null ?

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.unboundid.scim2.common.types.Email;
 import com.unboundid.scim2.common.types.Group;
 import com.unboundid.scim2.common.types.UserResource;
-import com.unboundid.scim2.common.messages.PatchRequest;
+import com.unboundid.scim2.common.types.Name;
 
 import java.util.List;
 
@@ -21,7 +21,6 @@ public class ScimUser extends UserResource {
             private String displayName;
             private Boolean active;
 
-            // Getters and setters
             public List<Email> getEmails() { return emails; }
             public void setEmails(List<Email> emails) { this.emails = emails; }
             public List<Group> getGroups() { return groups; }
