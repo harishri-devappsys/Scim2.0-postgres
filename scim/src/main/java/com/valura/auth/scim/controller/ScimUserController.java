@@ -1,6 +1,7 @@
 package com.valura.auth.scim.controller;
 
 import com.unboundid.scim2.common.exceptions.ScimException;
+import com.unboundid.scim2.common.exceptions.ResourceConflictException;
 import com.unboundid.scim2.common.types.UserResource;
 import com.unboundid.scim2.server.annotations.ResourceType;
 import com.valura.auth.scim.model.ScimListResponse;
@@ -64,7 +65,7 @@ public class ScimUserController {
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @RequestBody UserResource user) throws ScimException {
         scimAuthorizationService.checkPermission(ScimScopes.SCIM_USERS_WRITE);
-        UserResource patchedUser = userService.patch(id, user, ifMatch); // Assuming a patch method in service
+        UserResource patchedUser = userService.patch(id, user, ifMatch);
         return ResponseEntity.ok()
                 .eTag(patchedUser.getMeta().getVersion())
                 .body(patchedUser);
@@ -86,5 +87,18 @@ public class ScimUserController {
         scimAuthorizationService.checkPermission(ScimScopes.SCIM_USERS_READ);
         ScimListResponse<UserResource> response = userService.search(startIndex, count, filter);
         return ResponseEntity.ok(response);
+    }
+
+    @ExceptionHandler(ResourceConflictException.class)
+    public ResponseEntity<String> handleResourceConflictException(ResourceConflictException ex) {
+        String errorBody = "{"
+                + "\"schemas\": [\"urn:ietf:params:scim:api:messages:2.0:Error\"],"
+                + "\"status\": \"409\","
+                + "\"scimType\": \"uniqueness\","
+                + "\"detail\": \"" + ex.getMessage() + "\""
+                + "}";
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .header(HttpHeaders.CONTENT_TYPE, "application/scim+json;charset=utf-8")
+                .body(errorBody);
     }
 }

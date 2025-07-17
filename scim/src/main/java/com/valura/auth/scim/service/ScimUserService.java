@@ -2,11 +2,12 @@ package com.valura.auth.scim.service;
 
 import com.unboundid.scim2.common.exceptions.ResourceNotFoundException;
 import com.unboundid.scim2.common.exceptions.BadRequestException;
+import com.unboundid.scim2.common.exceptions.ResourceConflictException;
 import com.unboundid.scim2.common.exceptions.PreconditionFailedException;
 import com.unboundid.scim2.common.exceptions.ScimException;
 import com.unboundid.scim2.common.types.Email;
 import com.unboundid.scim2.common.types.Meta;
-import com.unboundid.scim2.common.types.Name; // Ensure this is imported
+import com.unboundid.scim2.common.types.Name;
 import com.unboundid.scim2.common.types.UserResource;
 import com.unboundid.scim2.server.annotations.ResourceType;
 import com.valura.auth.database.entity.UserEntity;
@@ -43,14 +44,13 @@ public class ScimUserService {
     }
 
     @Transactional
-    public UserResource create(UserResource user) throws BadRequestException {
-        if (userRepository.existsByUserName(user.getUserName())) {
-            throw BadRequestException.uniqueness("Username already exists");
-        }
+    public UserResource create(UserResource user) throws ScimException { // Changed throws clause
+        if (userRepository.existsByUserName(user.getUserName()))
+            throw new ResourceConflictException("Username already exists"); // Changed from BadRequestException
 
         UserEntity entity = new UserEntity();
-        entity.setExternalId(UUID.randomUUID().toString()); // ExternalId set here for new users
-        updateEntityFromScim(entity, user); // This will now map name fields
+        entity.setExternalId(UUID.randomUUID().toString());
+        updateEntityFromScim(entity, user);
         entity = userRepository.save(entity);
         return mapToScimUser(entity);
     }
@@ -69,9 +69,7 @@ public class ScimUserService {
         UserResource existingUser = mapToScimUser(entity);
         validateETag(existingUser.getMeta().getVersion(), ifMatch);
 
-        // Do NOT set ExternalId here, as it's an existing user.
-        // If the SCIM client sends an 'id' in the PUT body, it implicitly means the existing resource.
-        updateEntityFromScim(entity, user); // This will now map name fields
+        updateEntityFromScim(entity, user);
         entity = userRepository.save(entity);
         return mapToScimUser(entity);
     }
@@ -84,10 +82,6 @@ public class ScimUserService {
         UserResource existingUser = mapToScimUser(entity);
         validateETag(existingUser.getMeta().getVersion(), ifMatch);
 
-        // Apply partial updates from 'user' to 'entity'
-        // This is a simplified example; a real SCIM PATCH would be more complex
-        // and involve operations like add, remove, replace.
-        // It should also call a more sophisticated update method or apply operations directly.
         if (user.getUserName() != null) {
             entity.setUserName(user.getUserName());
         }
@@ -100,7 +94,7 @@ public class ScimUserService {
         if (user.getEmails() != null && !user.getEmails().isEmpty()) {
             entity.setEmail(user.getEmails().get(0).getValue());
         }
-        // For PATCH, you'd typically need to check for name presence as well
+
         if (user.getName() != null) {
             if (user.getName().getGivenName() != null) {
                 entity.setFirstName(user.getName().getGivenName());
@@ -153,11 +147,11 @@ public class ScimUserService {
                             boolean activeValue = Boolean.parseBoolean(filterResult.getValue());
                             page = userRepository.findByActive(activeValue, pageable);
                             break;
-                        case "name.givenname": // Added filter for givenName
+                        case "name.givenname":
                             page = userRepository.findByFirstNameContainingIgnoreCase(
                                     filterResult.getValue(), pageable);
                             break;
-                        case "name.familyname": // Added filter for familyName
+                        case "name.familyname":
                             page = userRepository.findByLastNameContainingIgnoreCase(
                                     filterResult.getValue(), pageable);
                             break;
@@ -181,7 +175,7 @@ public class ScimUserService {
                     .resources(resources)
                     .totalResults((int) page.getTotalElements())
                     .startIndex(startIndex != null ? startIndex : 1)
-                    .itemsPerPage(resources.size()) // Use resources.size() for actual items per page
+                    .itemsPerPage(resources.size())
                     .build();
 
         } catch (Exception e) {
@@ -228,9 +222,7 @@ public class ScimUserService {
             entity.setEmail(user.getEmails().get(0).getValue());
         }
 
-        // --- NEW/UPDATED MAPPING FOR NAME ---
         if (user.getName() != null) {
-            // Only update if provided in the SCIM UserResource
             if (user.getName().getGivenName() != null) {
                 entity.setFirstName(user.getName().getGivenName());
             }
@@ -238,7 +230,6 @@ public class ScimUserService {
                 entity.setLastName(user.getName().getFamilyName());
             }
         }
-        // --- END NEW/UPDATED MAPPING ---
     }
 
     private UserResource mapToScimUser(UserEntity entity) {
@@ -248,9 +239,8 @@ public class ScimUserService {
         scimUser.setDisplayName(entity.getDisplayName());
         scimUser.setActive(entity.isActive());
 
-        // --- NEW/UPDATED MAPPING FOR NAME ---
         if (entity.getFirstName() != null || entity.getLastName() != null) {
-            Name name = new Name(); // Use UnboundID's Name class
+            Name name = new Name();
             name.setGivenName(entity.getFirstName());
             name.setFamilyName(entity.getLastName());
             if (entity.getFirstName() != null && entity.getLastName() != null) {
@@ -260,9 +250,8 @@ public class ScimUserService {
             } else if (entity.getLastName() != null) {
                 name.setFormatted(entity.getLastName());
             }
-            scimUser.setName(name); // Set the populated Name object
+            scimUser.setName(name);
         }
-        // --- END NEW/UPDATED MAPPING ---
 
         if (entity.getEmail() != null) {
             Email email = new Email();
